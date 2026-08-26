@@ -447,7 +447,7 @@ export async function initializeExtensions(session: AgentSession, options: Initi
 							);
 						}
 						try {
-							await rescopeSessionCwd.call(session, String(input.path));
+							await rescopeSessionCwd.call(session, String(input.path), { scope: "any" });
 						} catch (error) {
 							if (
 								error instanceof Error &&
