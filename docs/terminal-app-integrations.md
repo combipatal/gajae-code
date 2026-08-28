@@ -165,6 +165,29 @@ GJC owns, add to the provider's `env` entry and restart the Paseo daemon:
 | `gjc setup paseo --check` reports `drift` | the entry was edited by hand or by another tool | reconcile manually, or `--remove` then re-install |
 | `failed to create agent` in `~/.paseo/daemon.log` | `gjc` not resolvable from the daemon's PATH | re-run `gjc setup paseo` so the absolute path is rewritten |
 | Permission-gated tools never prompt | `GJC_ACP_PERMISSION_MODE` overridden | set it back to `prompt` in the provider `env` |
+| Nothing appears in Paseo after `gjc` | `paseo.autoImport` is off (the default) | `gjc config set paseo.autoImport true` |
+| Still nothing, and the log says `daemon-auth-required` | the daemon requires a password and `PASEO_PASSWORD` is not in the environment `gjc` inherits | export it for `gjc` (see below) |
+| Still nothing, and there is no announcement log line at all | the `gjc` on `PATH` predates the feature | rebuild/reinstall, then confirm with `gjc config get paseo.autoImport` |
+
+The announcement is best-effort and never interrupts a launch, so every failure is quiet by design.
+The outcome is always recorded once per session at debug level:
+
+```sh
+grep 'Paseo session announcement' ~/.gjc/logs/gjc.$(date +%F).log | tail -1
+```
+
+The `reason` names the exact gate that stopped it: `no-paseo-config`, `no-provider`, `cli-missing`,
+`daemon-unreachable`, `daemon-auth-required`, or `session-not-live`.
+
+#### Password-protected daemons
+
+GJC never reads a Paseo credential. It runs `paseo import` and lets the CLI authenticate the way it
+normally does, which means the password has to be in the environment `gjc` itself inherits. Prefer
+scoping it to `gjc` rather than exporting it into every process on the machine:
+
+```sh
+gjc() { PASEO_PASSWORD="$(cat ~/.paseo/your-password-file)" command gjc "$@"; }
+```
 
 Deeper reading: [ACP local development loop](./acp-local-development.md) ·
 [External-control readiness](./external-control-readiness.md#paseo-custom-agent) ·
