@@ -105,6 +105,30 @@ see that, because the TCP connect succeeds, so it is recognized from the CLI's r
 `PASEO_PASSWORD` if you want announcements to reach a protected daemon. Set `paseo.autoImport` back to
 `false` to stop announcing again.
 
+### Lifecycle: GJC creates, you delete
+
+GJC only ever *adds* an entry. It never deletes, archives, or rewrites one, so nothing it does can
+remove an agent you still wanted — and the cleanup is yours to run.
+
+What that means in practice:
+
+- **One entry per launch.** Every interactive start gets a fresh session id, including `gjc -c`, so
+  resuming your work in the same directory adds another entry rather than reusing the previous one.
+- **Ending the session does not remove its entry.** Paseo keeps listing it, and keeps showing it as
+  `idle`, because nothing told the daemon otherwise. Sending to it fails with
+  `SDK session attachment is stale`, and Paseo then marks it `error`.
+
+So the list grows one row per launch until you prune it:
+
+```sh
+paseo ls                  # find the stale ids
+paseo delete <agent-id>
+```
+
+If that bookkeeping is not worth it to you, leave `paseo.autoImport` off and import the sessions you
+actually want to drive by hand — `paseo import --provider gjc --cwd "$PWD" <session-id>` is exactly
+what the setting automates.
+
 Nothing else about the integration depends on this setting: `paseo run --provider gjc` and manual
 `paseo import` work exactly the same whether it is on or off.
 
