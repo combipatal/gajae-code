@@ -1730,6 +1730,17 @@ export const SETTINGS_SCHEMA = {
 		},
 	},
 
+	"paseo.autoImport": {
+		type: "boolean",
+		default: true,
+		ui: {
+			tab: "interaction",
+			label: "Announce Sessions to Paseo",
+			description:
+				"When a GJC ACP provider is registered in Paseo and its daemon is already running, import each interactive session into Paseo so it can be driven from there. Never starts the Paseo daemon and never runs when Paseo is absent.",
+		},
+	},
+
 	"crashReport.nudge": {
 		type: "boolean",
 		default: true,

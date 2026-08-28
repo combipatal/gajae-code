@@ -65,6 +65,33 @@ Model profiles are also selectable without a second provider: GJC advertises eac
 ACP clients as a synthetic model under the reserved `gajae-code/<profile>` namespace (e.g.
 `gajae-code/codex-eco`), so Paseo's ordinary **Model** picker can switch profiles for the live session.
 
+### Announcing interactive sessions
+
+A terminal `gjc` is not only a client of Paseo, it is also visible *inside* it. Every interactive
+session registers its SDK endpoint with GJC's broker, and an ACP `session/load` against an entry the
+broker reports as `live` attaches to the **running** host rather than resuming a copy — so the same
+session can be driven from the terminal and from Paseo (including Paseo mobile) at once.
+
+GJC performs the one remaining step for you. When an interactive session starts, and only when a GJC
+provider is already registered in `~/.paseo/config.json` **and** the Paseo daemon is already
+listening, GJC runs the equivalent of:
+
+```sh
+paseo import --provider gjc --cwd /path/to/repo <session-id>
+```
+
+The order of checks is what keeps this free: an absent `~/.paseo/config.json`, no GJC provider entry,
+no `paseo` on PATH, or a daemon that is not listening each stop the announcement before anything is
+spawned. The daemon check is a plain socket probe, because the Paseo CLI blocks indefinitely when its
+daemon is down. A session that is not yet registered with the broker is never imported either, since
+that would make `session/load` resume a second host for a session that is already running. While the
+daemon is simply not up yet, GJC retries the probe on a slow cadence for a few minutes, so starting
+Paseo after your terminal still works.
+
+Re-importing an already-imported session is a no-op: Paseo refuses it and GJC reads that refusal as
+success. Turn the whole thing off with the `paseo.autoImport` setting (Settings → Interaction →
+"Announce Sessions to Paseo").
+
 ### Run it
 
 ```sh

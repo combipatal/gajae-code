@@ -13,7 +13,7 @@ import {
 	Text,
 	TUI,
 } from "@gajae-code/tui";
-import { APP_NAME, adjustHsv, getProjectDir, logger, postmortem, sanitizeText } from "@gajae-code/utils";
+import { APP_NAME, adjustHsv, getAgentDir, getProjectDir, logger, postmortem, sanitizeText } from "@gajae-code/utils";
 import chalk from "chalk";
 import { AsyncJobManager } from "../async";
 import {
@@ -49,6 +49,7 @@ import type { AgentSession, AgentSessionEvent } from "../session/agent-session";
 import type { HistoryStorage } from "../session/history-storage";
 import type { SessionContext, SessionManager } from "../session/session-manager";
 import { getRecentSessions, getSessionMessageEntryId } from "../session/session-manager";
+import { createDefaultPaseoAnnounceDependencies, startPaseoAnnouncement } from "../setup/paseo/announce";
 import type { LspStartupServerInfo } from "../tools";
 import { formatPhaseDisplayName } from "../tools/todo-write";
 import { copyToClipboard } from "../utils/clipboard";
@@ -1038,6 +1039,30 @@ export class InteractiveMode implements InteractiveModeContext {
 				})();
 			}, 0);
 			crashRelayTimer.unref?.();
+		}
+
+		// Make this session visible in Paseo. Interactive-only by construction: a
+		// `gjc acp` provider process never builds an InteractiveMode, so an imported
+		// session can never announce itself back into Paseo.
+		if (this.settings.get("paseo.autoImport")) {
+			const sessionId = this.sessionManager.getSessionId();
+			const announcement = startPaseoAnnouncement(
+				{
+					sessionId,
+					cwd: this.sessionManager.getCwd(),
+					onOutcome: outcome => {
+						if (this.#stopped || outcome.kind === "skipped") return;
+						this.showStatus(
+							outcome.kind === "failed"
+								? `Paseo import failed: ${outcome.detail}`
+								: `Controllable in Paseo as ${outcome.providerKey}`,
+							{ dim: true },
+						);
+					},
+				},
+				createDefaultPaseoAnnounceDependencies(getAgentDir()),
+			);
+			this.#stopListeners.add(() => announcement.cancel());
 		}
 
 		if (starReminderGate.schedule) {
