@@ -72,6 +72,13 @@ session registers its SDK endpoint with GJC's broker, and an ACP `session/load` 
 broker reports as `live` attaches to the **running** host rather than resuming a copy — so the same
 session can be driven from the terminal and from Paseo (including Paseo mobile) at once.
 
+> **What attaching gives you today.** A prompt sent from Paseo reaches the live session, the terminal
+> renders it and the reply, and the turn settles (Paseo returns to `idle`). What Paseo does **not**
+> get is the streamed transcript: an interactive session runs on the SDK-only host runtime, which
+> publishes lifecycle boundaries but no assistant text or tool calls, so Paseo's own transcript shows
+> your prompt and a completed turn with no answer body. Read the reply in the terminal. Sessions that
+> Paseo *starts* (`paseo run --provider gjc`) use the full runtime and stream normally.
+
 GJC performs the one remaining step for you. When an interactive session starts, and only when a GJC
 provider is already registered in `~/.paseo/config.json` **and** the Paseo daemon is already
 listening, GJC runs the equivalent of:
@@ -89,8 +96,10 @@ daemon is simply not up yet, GJC retries the probe on a slow cadence for a few m
 Paseo after your terminal still works.
 
 Re-importing an already-imported session is a no-op: Paseo refuses it and GJC reads that refusal as
-success. Turn the whole thing off with the `paseo.autoImport` setting (Settings → Interaction →
-"Announce Sessions to Paseo").
+success. A daemon that requires a password is skipped in the same quiet way — the socket probe cannot
+see that, because the TCP connect succeeds, so it is recognized from the CLI's refusal; export
+`PASEO_PASSWORD` if you want announcements to reach a protected daemon. Turn the whole thing off with
+the `paseo.autoImport` setting (Settings → Interaction → "Announce Sessions to Paseo").
 
 ### Run it
 

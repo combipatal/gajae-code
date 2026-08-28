@@ -14,6 +14,7 @@ import { resolveModelChainWithAuth, splitSelectorThinkingSuffix } from "../../co
 import { type ModelSelectorValue, normalizeModelSelectorValue } from "../../config/model-selector-value";
 import { type Settings, validateSettingPatch } from "../../config/settings";
 import type { ExtensionAPI, ExtensionCommandContext, ExtensionContext } from "../../extensibility/extensions";
+import type { AgentEndEvent } from "../../extensibility/shared-events";
 import { normalizeGoal } from "../../goals/state";
 import {
 	boundTerminalRetentionState,
@@ -36,6 +37,7 @@ import {
 import { projectQ10Models } from "../models.js";
 import { PromptDeadlineManager } from "../prompt-deadline-manager";
 import { formatPromptFailureForLocalLog, sanitizePromptFailure } from "../prompt-failure";
+import type { SdkPromptTerminalOutcome } from "../prompt-status";
 import { OPERATIONS } from "../protocol/operation-registry";
 import {
 	createKindAwareReconciliation,
@@ -97,6 +99,24 @@ class DiffQueryError extends Error {
 	) {
 		super(message);
 	}
+}
+
+/**
+ * Normalize an agent-loop stop reason into the published terminal outcome.
+ *
+ * Only reached for a boundary that actually terminalizes an owned invocation,
+ * so every result is a `stopped` disposition: a failed run publishes its own
+ * correlated `agent_failed` frame with the sanitized cause instead.
+ */
+export function terminalStoppedOutcome(
+	stopReason: AgentEndEvent["stopReason"],
+	maintenanceOutcome: string | undefined,
+): Extract<SdkPromptTerminalOutcome, { kind: "stopped" }> {
+	// An aborted maintenance checkpoint is the one maintenance path that really
+	// ends the run, and it ends it the same way an explicit stop does.
+	return stopReason === "cancelled" || maintenanceOutcome === "aborted"
+		? { kind: "stopped", reason: "cancelled", provenance: "client_cancel" }
+		: { kind: "stopped", reason: "end_turn", provenance: "agent" };
 }
 
 /** Transport-neutral endpoint contract consumed by the SDK session runtime. */
@@ -3374,9 +3394,14 @@ export function createSdkSessionRuntimeExtension(api: ExtensionAPI, options: Cre
 		failureCause?: unknown,
 		maintenanceOutcome?: string,
 		lifecycleOwner?: LifecycleOwner,
+		stopReason?: AgentEndEvent["stopReason"],
 	): Promise<void> => {
 		const current = lifecycleOwner?.state ?? active;
 		if (!current) return;
+		// A non-aborted maintenance checkpoint publishes an `agent_end` that is not a
+		// terminal boundary -- the same condition the post-publication early return
+		// below uses to stop before terminalizing ownership.
+		const terminalBoundary = !(maintenanceOutcome !== undefined && maintenanceOutcome !== "aborted");
 		const failureBatch = lifecycleOwner?.batch;
 		const adoptLifecycleBatch = (
 			batch:
@@ -3693,7 +3718,32 @@ export function createSdkSessionRuntimeExtension(api: ExtensionAPI, options: Cre
 						observed = false;
 					}
 				}
+			} else if (type === "agent_end" && terminalBoundary && transitions.length > 0) {
+				// An invocation-owned terminal must carry the identity it was accepted
+				// under and the normalized outcome. A client that submitted this turn
+				// matches the terminal against its own acknowledged correlation and
+				// refuses an unowned one, so the bare `{ type, sessionId }` boundary left
+				// every externally submitted prompt reporting `working` forever even
+				// though the turn had finished -- ACP dropped it as
+				// `incomplete_correlation`, and the notifications runtime has always
+				// stamped both fields for exactly this reason. One frame per invocation,
+				// matching the agent_failed shape above, also lets a shared run attribute
+				// the boundary to each owner instead of one signal nobody can claim.
+				const outcome = terminalStoppedOutcome(stopReason, maintenanceOutcome);
+				for (const invocation of transitions) {
+					try {
+						current.runtime.emitEvent({ type, sessionId, ...invocation.correlation, outcome });
+					} catch {
+						observed = false;
+					}
+				}
 			} else {
+				// Everything that does not terminalize an owned invocation keeps the one
+				// uncorrelated frame: `agent_start`, a host-originated run (autonomous
+				// continuation, cron, monitor) that owns no invocation, and a non-aborted
+				// maintenance checkpoint -- which is published but is deliberately not a
+				// terminal boundary, so stamping it would settle a client's prompt in the
+				// middle of a turn that is still running.
 				try {
 					current.runtime.emitEvent({ type, sessionId });
 				} catch {
@@ -3825,6 +3875,7 @@ export function createSdkSessionRuntimeExtension(api: ExtensionAPI, options: Cre
 				undefined,
 				event.stopReason === "maintenance" ? event.maintenanceOutcome : undefined,
 				lifecycleOwner,
+				event.stopReason,
 			);
 		}, owner).finally(() => {
 			if (typeof event.sdkRunToken === "string" && lifecycleRunOwners.get(event.sdkRunToken)?.state === owner)

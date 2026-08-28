@@ -251,6 +251,23 @@ describe("classifyImportFailure", () => {
 		});
 	});
 
+	test("reads a password-protected daemon as a quiet skip, not a failure", () => {
+		// Measured against Paseo 0.6.1: the socket probe cannot see this, because the
+		// TCP connect succeeds. Reporting it would put an error on screen at every
+		// launch for a configuration GJC must not change on its own.
+		expect(
+			classifyImportFailure(
+				"gjc",
+				"Error: Cannot connect to daemon at localhost:6767: Password required\nStart the daemon with: paseo daemon start",
+			),
+		).toEqual({ kind: "skipped", reason: "daemon-auth-required" });
+		expect(classifyImportFailure("gjc", "Unauthorized")).toEqual({ kind: "skipped", reason: "daemon-auth-required" });
+		expect(classifyImportFailure("gjc", "authentication failed")).toEqual({
+			kind: "skipped",
+			reason: "daemon-auth-required",
+		});
+	});
+
 	test("keeps a genuine failure and bounds its detail", () => {
 		expect(classifyImportFailure("gjc", "DAEMON_NOT_RUNNING")).toEqual({
 			kind: "failed",
@@ -272,6 +289,7 @@ describe("isRetryableOutcome", () => {
 			{ kind: "skipped", reason: "no-paseo-config" },
 			{ kind: "skipped", reason: "no-provider" },
 			{ kind: "skipped", reason: "cli-missing" },
+			{ kind: "skipped", reason: "daemon-auth-required" },
 			{ kind: "imported", providerKey: "gjc" },
 			{ kind: "already-imported", providerKey: "gjc" },
 			{ kind: "failed", detail: "boom" },
@@ -354,10 +372,22 @@ describe("default dependencies", () => {
 
 	test("a genuine CLI failure surfaces its stderr", async () => {
 		const dependencies = createDefaultPaseoAnnounceDependencies("/tmp/agent-dir", {});
-		const cli = await fakeCli('echo "Cannot connect to daemon at localhost:6767" >&2\nexit 1');
+		const cli = await fakeCli('echo "Failed to import agent: provider handshake failed" >&2\nexit 1');
 		const outcome = await dependencies.runImport(importInput(cli));
 		expect(outcome.kind).toBe("failed");
-		expect(outcome.kind === "failed" && outcome.detail).toContain("Cannot connect to daemon");
+		expect(outcome.kind === "failed" && outcome.detail).toContain("provider handshake failed");
+	});
+
+	test("the real Paseo password refusal reaches the caller as a skip", async () => {
+		// Verbatim stderr measured from Paseo 0.6.1 against a password-protected daemon.
+		const dependencies = createDefaultPaseoAnnounceDependencies("/tmp/agent-dir", {});
+		const cli = await fakeCli(
+			'echo "Error: Cannot connect to daemon at localhost:6767: Password required" >&2\necho "Start the daemon with: paseo daemon start" >&2\nexit 1',
+		);
+		expect(await dependencies.runImport(importInput(cli))).toEqual({
+			kind: "skipped",
+			reason: "daemon-auth-required",
+		});
 	});
 
 	test("an unlaunchable CLI fails instead of throwing", async () => {

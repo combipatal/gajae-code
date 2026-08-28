@@ -56,6 +56,7 @@ export type PaseoAnnounceSkip =
 	| "no-provider"
 	| "cli-missing"
 	| "daemon-unreachable"
+	| "daemon-auth-required"
 	| "session-not-live";
 
 export type PaseoAnnounceOutcome =
@@ -168,11 +169,25 @@ export async function resolveDaemonTarget(
 	return configuredTarget ?? DEFAULT_DAEMON_TARGET;
 }
 
-/** Paseo reports an already-known session as an error; that is a success for us. */
+/**
+ * Turn a non-zero `paseo import` into an outcome.
+ *
+ * Two of Paseo's refusals are not failures:
+ *
+ * - an already-known session is exactly the state we wanted to reach;
+ * - a password-protected daemon (`Cannot connect to daemon ...: Password
+ *   required`) is a configuration the user chose. The socket probe cannot see
+ *   it -- the TCP connect succeeds -- so it can only be recognized here, and
+ *   reporting it would put an error on screen at every single launch for
+ *   something GJC must not fix on its own. Exporting `PASEO_PASSWORD` makes it
+ *   work, since the CLI inherits this process's environment.
+ */
 export function classifyImportFailure(providerKey: string, detail: string): PaseoAnnounceOutcome {
-	return /already imported/i.test(detail)
-		? { kind: "already-imported", providerKey }
-		: { kind: "failed", detail: detail.slice(0, 500) };
+	if (/already imported/i.test(detail)) return { kind: "already-imported", providerKey };
+	if (/password required|unauthorized|authentication (failed|required)|invalid password/i.test(detail)) {
+		return { kind: "skipped", reason: "daemon-auth-required" };
+	}
+	return { kind: "failed", detail: detail.slice(0, 500) };
 }
 
 /**
