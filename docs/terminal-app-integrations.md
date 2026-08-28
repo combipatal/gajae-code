@@ -72,12 +72,10 @@ session registers its SDK endpoint with GJC's broker, and an ACP `session/load` 
 broker reports as `live` attaches to the **running** host rather than resuming a copy — so the same
 session can be driven from the terminal and from Paseo (including Paseo mobile) at once.
 
-> **What attaching gives you today.** A prompt sent from Paseo reaches the live session, the terminal
-> renders it and the reply, and the turn settles (Paseo returns to `idle`). What Paseo does **not**
-> get is the streamed transcript: an interactive session runs on the SDK-only host runtime, which
-> publishes lifecycle boundaries but no assistant text or tool calls, so Paseo's own transcript shows
-> your prompt and a completed turn with no answer body. Read the reply in the terminal. Sessions that
-> Paseo *starts* (`paseo run --provider gjc`) use the full runtime and stream normally.
+A prompt sent from Paseo reaches the live session, the terminal renders it, and Paseo streams the
+turn back: assistant text, thinking, and tool calls arrive as they happen, and the turn settles to
+`idle`. Content is delivered only to the connections that submitted the turn, so an ordinary terminal
+prompt with nobody attached streams nothing, and a session with no attached client costs nothing.
 
 GJC can perform the one remaining step for you. This is **opt-in and off by default** — nothing
 contacts Paseo until you turn it on:

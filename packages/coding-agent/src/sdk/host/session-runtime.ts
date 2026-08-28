@@ -16,6 +16,8 @@ import { type Settings, validateSettingPatch } from "../../config/settings";
 import type { ExtensionAPI, ExtensionCommandContext, ExtensionContext } from "../../extensibility/extensions";
 import type { AgentEndEvent } from "../../extensibility/shared-events";
 import { normalizeGoal } from "../../goals/state";
+import { toAgentWireEventPayload } from "../../modes/shared/agent-wire/event-envelope";
+import type { AgentSessionEvent } from "../../session/agent-session";
 import {
 	boundTerminalRetentionState,
 	findOwnedRegistrationsForTurn,
@@ -316,6 +318,28 @@ export class SessionSdkSessionRuntime {
 				: { kind: typeof frame.type === "string" ? frame.type : "event", payload: frame };
 		const event = this.host.emitEvent(eventInput);
 		this.transport.broadcastFrame?.(event);
+	}
+
+	/**
+	 * Deliver a frame to specific connections without recording it.
+	 *
+	 * Deliberately not `emitEvent`: that assigns a ring position and broadcasts to
+	 * every authenticated socket. Streamed turn content is high-frequency and
+	 * unbounded in size, so a count-bounded ring would evict the lifecycle events
+	 * clients depend on -- including the `agent_end` that settles their prompt --
+	 * and broadcasting would hand every subscriber a stream only the submitter
+	 * asked for. Delivery failure is ignored: a disconnected consumer must never
+	 * disturb the turn producing the content.
+	 */
+	sendFrameTo(connectionIds: Iterable<string>, frame: SdkFrame): void {
+		for (const connectionId of connectionIds) {
+			try {
+				const result = this.transport.sendFrame(connectionId, frame);
+				if (result instanceof Promise) result.catch(() => undefined);
+			} catch {
+				// A dead connection is reaped by the transport's own close handling.
+			}
+		}
 	}
 
 	publish(frame: SdkFrame): void {
@@ -3964,11 +3988,63 @@ export function createSdkSessionRuntimeExtension(api: ExtensionAPI, options: Cre
 				current.deadlineManager.onAttributableEvent(invocation.correlation, eventType);
 		}
 	};
-	api.on("tool_execution_start", async (_event, ctx) => {
+	/**
+	 * Stream one turn event to the connections that submitted the running turn.
+	 *
+	 * This is the same frame the notifications runtime sends for an ACP-launched
+	 * session (`{ type: "event", kind, payload: { event_type, event }, ...correlation }`),
+	 * built from the same shared producer, so an ACP client attached to a live
+	 * interactive session renders assistant text and tool calls exactly as it does
+	 * for a session it started itself. Without it an attached client could drive
+	 * the session and see the turn settle but never receive a single word of the
+	 * answer.
+	 *
+	 * Scoped to the owning invocations of the batch that is actually running: a
+	 * turn nobody submitted over the SDK (an ordinary terminal prompt, an
+	 * autonomous continuation, cron, monitor) has no owner connection and streams
+	 * nothing at all, so a session with no attached client pays one map lookup.
+	 */
+	const streamTurnEvent = (event: AgentSessionEvent, ctx: ExtensionContext): void => {
+		const current = lifecycleStateForContext(ctx, "agent_start");
+		const activeInvocation = current?.activeInvocation;
+		if (!current || !activeInvocation) return;
+		const batch = current.openLifecycleBatches.find(candidate =>
+			candidate.invocations.some(
+				entry =>
+					entry.correlation.commandId === activeInvocation.correlation.commandId &&
+					entry.correlation.turnId === activeInvocation.correlation.turnId,
+			),
+		);
+		if (!batch) return;
+		const payload = toAgentWireEventPayload(event);
+		// One frame per owning invocation, each carrying its own correlation, so a
+		// shared run lets every submitter attribute the content to its own prompt.
+		for (const invocation of batch.invocations) {
+			if (invocation.connectionId === undefined) continue;
+			current.runtime.sendFrameTo([invocation.connectionId], {
+				type: "event",
+				kind: event.type,
+				payload,
+				...invocation.correlation,
+			});
+		}
+	};
+	api.on("tool_execution_start", async (event, ctx) => {
 		renewAttributableProgress("tool_execution_start", ctx);
+		streamTurnEvent(event as unknown as AgentSessionEvent, ctx);
 	});
-	api.on("tool_execution_end", async (_event, ctx) => {
+	api.on("tool_execution_update", async (event, ctx) => {
+		streamTurnEvent(event as unknown as AgentSessionEvent, ctx);
+	});
+	api.on("tool_execution_end", async (event, ctx) => {
 		renewAttributableProgress("tool_execution_end", ctx);
+		streamTurnEvent(event as unknown as AgentSessionEvent, ctx);
+	});
+	api.on("message_update", async (event, ctx) => {
+		streamTurnEvent(event as unknown as AgentSessionEvent, ctx);
+	});
+	api.on("message_end", async (event, ctx) => {
+		streamTurnEvent(event as unknown as AgentSessionEvent, ctx);
 	});
 	const errorCode = (error: unknown): string | undefined =>
 		typeof error === "object" &&
