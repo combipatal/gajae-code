@@ -378,6 +378,27 @@ describe("default dependencies", () => {
 		expect(outcome.kind === "failed" && outcome.detail).toContain("provider handshake failed");
 	});
 
+	test("passes the session's exported environment through to the CLI", async () => {
+		// GJC reads no credential and has no setting of its own: `paseo import`
+		// authenticates exactly as it would if the user ran it by hand, so an
+		// exported PASEO_PASSWORD must reach the child verbatim.
+		const cli = await fakeCli('printf "%s" "$PASEO_PASSWORD" > "$(dirname "$0")/seen-password"; exit 0');
+		const dependencies = createDefaultPaseoAnnounceDependencies("/tmp/agent-dir", {
+			PASEO_PASSWORD: "exported-secret",
+		});
+		expect(await dependencies.runImport(importInput(cli))).toEqual({ kind: "imported", providerKey: "gjc" });
+		expect(await Bun.file(path.join(path.dirname(cli), "seen-password")).text()).toBe("exported-secret");
+	});
+
+	test("passes nothing when the environment does not carry one", async () => {
+		// The absent case must stay absent rather than leaking the host process's
+		// own environment past the injected one.
+		const cli = await fakeCli('printf "[%s]" "$PASEO_PASSWORD" > "$(dirname "$0")/seen-password"; exit 0');
+		const dependencies = createDefaultPaseoAnnounceDependencies("/tmp/agent-dir", {});
+		await dependencies.runImport(importInput(cli));
+		expect(await Bun.file(path.join(path.dirname(cli), "seen-password")).text()).toBe("[]");
+	});
+
 	test("the real Paseo password refusal reaches the caller as a skip", async () => {
 		// Verbatim stderr measured from Paseo 0.6.1 against a password-protected daemon.
 		const dependencies = createDefaultPaseoAnnounceDependencies("/tmp/agent-dir", {});

@@ -327,29 +327,39 @@ function isSessionLive(agentDir: string): (sessionId: string, cwd: string) => Pr
 	};
 }
 
-async function runImport(input: {
-	readonly cli: string;
-	readonly providerKey: string;
-	readonly cwd: string;
-	readonly sessionId: string;
-}): Promise<PaseoAnnounceOutcome> {
-	const controller = new AbortController();
-	const timer = setTimeout(() => controller.abort(), IMPORT_TIMEOUT_MS);
-	try {
-		const child = Bun.spawn(
-			[input.cli, "import", "--provider", input.providerKey, "--cwd", input.cwd, input.sessionId],
-			{ stdout: "pipe", stderr: "pipe", signal: controller.signal },
-		);
-		const [exitCode, stderr] = await Promise.all([child.exited, new Response(child.stderr).text()]);
-		if (controller.signal.aborted)
-			return { kind: "failed", detail: `paseo import timed out after ${IMPORT_TIMEOUT_MS}ms` };
-		if (exitCode === 0) return { kind: "imported", providerKey: input.providerKey };
-		return classifyImportFailure(input.providerKey, stderr.trim() || `paseo import exited with ${exitCode}`);
-	} catch (error) {
-		return { kind: "failed", detail: error instanceof Error ? error.message : String(error) };
-	} finally {
-		clearTimeout(timer);
-	}
+/**
+ * Run `paseo import` with the session's own environment.
+ *
+ * GJC never reads a Paseo credential and has no setting of its own for one. The
+ * CLI authenticates exactly as it would if the user ran it by hand: if
+ * `PASEO_PASSWORD` is exported it is inherited, and if it is not, a
+ * password-protected daemon refuses and the announcement becomes a quiet skip.
+ */
+function runImport(env: NodeJS.ProcessEnv) {
+	return async (input: {
+		readonly cli: string;
+		readonly providerKey: string;
+		readonly cwd: string;
+		readonly sessionId: string;
+	}): Promise<PaseoAnnounceOutcome> => {
+		const controller = new AbortController();
+		const timer = setTimeout(() => controller.abort(), IMPORT_TIMEOUT_MS);
+		try {
+			const child = Bun.spawn(
+				[input.cli, "import", "--provider", input.providerKey, "--cwd", input.cwd, input.sessionId],
+				{ stdout: "pipe", stderr: "pipe", signal: controller.signal, env },
+			);
+			const [exitCode, stderr] = await Promise.all([child.exited, new Response(child.stderr).text()]);
+			if (controller.signal.aborted)
+				return { kind: "failed", detail: `paseo import timed out after ${IMPORT_TIMEOUT_MS}ms` };
+			if (exitCode === 0) return { kind: "imported", providerKey: input.providerKey };
+			return classifyImportFailure(input.providerKey, stderr.trim() || `paseo import exited with ${exitCode}`);
+		} catch (error) {
+			return { kind: "failed", detail: error instanceof Error ? error.message : String(error) };
+		} finally {
+			clearTimeout(timer);
+		}
+	};
 }
 
 export function createDefaultPaseoAnnounceDependencies(
@@ -368,6 +378,6 @@ export function createDefaultPaseoAnnounceDependencies(
 		resolveCli: () => $which("paseo", env.PATH === undefined ? undefined : { PATH: env.PATH }) ?? undefined,
 		probeDaemon,
 		isSessionLive: isSessionLive(agentDir),
-		runImport,
+		runImport: runImport(env),
 	};
 }
