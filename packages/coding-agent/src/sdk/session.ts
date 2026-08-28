@@ -3941,6 +3941,7 @@ export async function createAgentSession(options: CreateAgentSessionOptions = {}
 		let cursorEventEmitter: ((event: AgentEvent) => void) | undefined;
 		const cursorExecHandlers = new CursorExecHandlers({
 			cwd,
+			getCwd: () => sessionManager.getCwd(),
 			tools: toolRegistry,
 			getEditReplaceTool: () => cursorReplaceEditTool,
 			createSearchTool: options => {
