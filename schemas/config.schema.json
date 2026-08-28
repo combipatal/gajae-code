@@ -1429,8 +1429,8 @@
 			"properties": {
 				"autoImport": {
 					"type": "boolean",
-					"description": "When a GJC ACP provider is registered in Paseo and its daemon is already running, import each interactive session into Paseo so it can be driven from there. Never starts the Paseo daemon and never runs when Paseo is absent.",
-					"default": true
+					"description": "Opt-in. When enabled, and only when a GJC ACP provider is already registered in Paseo and its daemon is already running, import each interactive session into Paseo so it can be driven from there. Never starts the Paseo daemon and never runs when Paseo is absent.",
+					"default": false
 				}
 			},
 			"additionalProperties": false

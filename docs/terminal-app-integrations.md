@@ -79,9 +79,15 @@ session can be driven from the terminal and from Paseo (including Paseo mobile) 
 > your prompt and a completed turn with no answer body. Read the reply in the terminal. Sessions that
 > Paseo *starts* (`paseo run --provider gjc`) use the full runtime and stream normally.
 
-GJC performs the one remaining step for you. When an interactive session starts, and only when a GJC
-provider is already registered in `~/.paseo/config.json` **and** the Paseo daemon is already
-listening, GJC runs the equivalent of:
+GJC can perform the one remaining step for you. This is **opt-in and off by default** — nothing
+contacts Paseo until you turn it on:
+
+```sh
+gjc config set paseo.autoImport true    # or Settings → Interaction → "Announce Sessions to Paseo"
+```
+
+Once enabled, when an interactive session starts, and only when a GJC provider is already registered
+in `~/.paseo/config.json` **and** the Paseo daemon is already listening, GJC runs the equivalent of:
 
 ```sh
 paseo import --provider gjc --cwd /path/to/repo <session-id>
@@ -98,8 +104,11 @@ Paseo after your terminal still works.
 Re-importing an already-imported session is a no-op: Paseo refuses it and GJC reads that refusal as
 success. A daemon that requires a password is skipped in the same quiet way — the socket probe cannot
 see that, because the TCP connect succeeds, so it is recognized from the CLI's refusal; export
-`PASEO_PASSWORD` if you want announcements to reach a protected daemon. Turn the whole thing off with
-the `paseo.autoImport` setting (Settings → Interaction → "Announce Sessions to Paseo").
+`PASEO_PASSWORD` if you want announcements to reach a protected daemon. Set `paseo.autoImport` back to
+`false` to stop announcing again.
+
+Nothing else about the integration depends on this setting: `paseo run --provider gjc` and manual
+`paseo import` work exactly the same whether it is on or off.
 
 ### Run it
 

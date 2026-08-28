@@ -21,7 +21,9 @@
  *   confirmed before the import, never assumed.
  *
  * Everything here is best-effort: no Paseo, a stopped daemon, or a failed import
- * must never slow down or break an interactive launch.
+ * must never slow down or break an interactive launch. It is also opt-in: the
+ * caller checks `paseo.autoImport` before any of this runs, so an installation
+ * that never asked for it pays nothing at all.
  */
 import * as net from "node:net";
 import * as os from "node:os";
@@ -51,7 +53,6 @@ export type PaseoDaemonTarget =
 
 /** Why an announcement did nothing. Each reason is a distinct, actionable state. */
 export type PaseoAnnounceSkip =
-	| "disabled"
 	| "no-paseo-config"
 	| "no-provider"
 	| "cli-missing"
