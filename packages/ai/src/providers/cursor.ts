@@ -996,6 +996,10 @@ export const streamCursor: StreamFunction<"cursor-agent"> = (
 		let terminalDrainStarted = false;
 		let terminalPendingError: unknown;
 		let terminalBoundarySeen = false;
+		// Lookahead can validate turnEnded while an exec handler holds the normal
+		// parser. Close new exec admission immediately, but leave the validated
+		// prefix available for ordered processing once that handler settles.
+		let terminalBoundaryObserved = false;
 		let processPendingBuffer: (() => void) | undefined;
 		let activeExecAbort: ((reason?: Error) => void) | undefined;
 		const closeTransportLocally = (): void => {
@@ -1227,6 +1231,7 @@ export const streamCursor: StreamFunction<"cursor-agent"> = (
 			// the bearer-authenticated request is created.
 			if (options?.signal?.aborted) throw cursorAbortError(options.signal);
 			h2ClientErrorHandler = error => {
+				if (terminalBoundarySeen || terminalBoundaryObserved || sawTurnEnded) return;
 				terminalize(error, "drainable");
 			};
 			h2Client.on("error", h2ClientErrorHandler);
@@ -1261,6 +1266,7 @@ export const streamCursor: StreamFunction<"cursor-agent"> = (
 				return () => shellGates.delete(close);
 			};
 			h2RequestErrorHandler = error => {
+				if (terminalBoundarySeen || terminalBoundaryObserved || sawTurnEnded) return;
 				terminalize(error, "drainable");
 			};
 			h2Request.on("error", h2RequestErrorHandler);
@@ -1388,6 +1394,7 @@ export const streamCursor: StreamFunction<"cursor-agent"> = (
 				);
 			};
 			h2Request.on("trailers", trailers => {
+				if (terminalBoundarySeen || terminalBoundaryObserved || sawTurnEnded) return;
 				const status = trailers["grpc-status"];
 				const msg = trailers["grpc-message"];
 				if (status && status !== "0") {
@@ -1408,6 +1415,10 @@ export const streamCursor: StreamFunction<"cursor-agent"> = (
 			 * remaining in an unbounded side buffer.
 			 */
 			const observeBufferedTerminal = (atEof = false): boolean => {
+				// Once a validated terminal boundary is known, every later byte is a
+				// tail. Never inspect its framing: a malformed or oversized tail must
+				// not replace the already-authoritative success.
+				if (terminalBoundarySeen || terminalBoundaryObserved) return true;
 				let offset = bufferedObservationOffset;
 				let observedTurnEnded = sawTurnEnded || bufferedObservationTurnEnded;
 				while (pendingBuffer.length - offset >= 5) {
@@ -1437,8 +1448,11 @@ export const streamCursor: StreamFunction<"cursor-agent"> = (
 							terminalize(missingTurnEnded, "drainable");
 							return true;
 						}
+						terminalBoundarySeen = true;
+						closeTerminalAdmission();
 						bufferedObservationOffset = offset + 5 + msgLen;
 						bufferedObservationTurnEnded = observedTurnEnded;
+						drainMessageQueue();
 						return true;
 					}
 					try {
@@ -1449,6 +1463,11 @@ export const streamCursor: StreamFunction<"cursor-agent"> = (
 						) {
 							observedTurnEnded = true;
 							sawTurnEnded = true;
+							terminalBoundaryObserved = true;
+							closeTerminalAdmission();
+							bufferedObservationOffset = offset + 5 + msgLen;
+							bufferedObservationTurnEnded = true;
+							return true;
 						}
 					} catch (error) {
 						const parseError = error instanceof Error ? error : new Error(String(error));
@@ -1523,13 +1542,19 @@ export const streamCursor: StreamFunction<"cursor-agent"> = (
 					pendingBuffer.consume(5 + msgLen);
 					bufferedObservationOffset = 0;
 					bufferedObservationTurnEnded = false;
-					if (terminalAdmissionMode === "closed" && !(flags & CONNECT_END_STREAM_FLAG) && !terminalDrainMode)
+					if (
+						terminalAdmissionMode === "closed" &&
+						!(flags & CONNECT_END_STREAM_FLAG) &&
+						!terminalDrainMode &&
+						!terminalBoundaryObserved
+					)
 						continue;
 
 					if (flags & CONNECT_END_STREAM_FLAG) {
 						closeTerminalAdmission();
 						responseEnded = true;
 						terminalBoundarySeen = true;
+						terminalBoundaryObserved = false;
 						const endError = parseConnectEndStream(messageBytes);
 						if (endError) {
 							endStreamError = endError;
@@ -1573,7 +1598,12 @@ export const streamCursor: StreamFunction<"cursor-agent"> = (
 						let mutationSlotReserved = false;
 						const queued = messageQueue.enqueue(async () => {
 							if (transportTerminalized && !(terminalDrainMode && !isExecServerMessage)) return;
-							if (isExecServerMessage && terminalAdmissionMode === "closed") return;
+							if (
+								isExecServerMessage &&
+								terminalAdmissionMode === "closed" &&
+								!(terminalBoundaryObserved && !terminalBoundarySeen)
+							)
+								return;
 							// An exec frame asks this process to perform work before Cursor can
 							// response. Its deadline is independent from raw transport
 							// progress, and pausing the request supplies bounded backpressure.
@@ -1673,6 +1703,11 @@ export const streamCursor: StreamFunction<"cursor-agent"> = (
 						// still runs in order, while settlement waits for queue drain.
 						if (isTurnEnded) {
 							sawTurnEnded = true;
+							// Make the boundary durable before inspecting the next frame's
+							// header. A malformed or oversized coalesced tail is not allowed
+							// to replace this validated terminal success.
+							terminalBoundarySeen = true;
+							terminalBoundaryObserved = false;
 							closeTerminalAdmission();
 							drainMessageQueue();
 						}
@@ -1685,15 +1720,18 @@ export const streamCursor: StreamFunction<"cursor-agent"> = (
 							h2Request!.pause();
 							const resumeAfterDrain = () => {
 								processingPausedForQueue = false;
+								if (processingPausedForExec || transportWatchdogClosed || callerAbortError) return;
+								if (terminalAdmissionMode !== "closed") h2Request!.resume();
+								// A lookahead turnEnded closes admission before the validated
+								// prefix reaches the queue bound. Continue parsing that prefix
+								// without reopening transport or admitting tail execs.
 								if (
-									!processingPausedForExec &&
-									!transportWatchdogClosed &&
-									!callerAbortError &&
-									terminalAdmissionMode !== "closed"
-								) {
-									h2Request!.resume();
+									!transportTerminalized ||
+									terminalDrainMode ||
+									terminalBoundaryObserved ||
+									terminalBoundarySeen
+								)
 									processPendingBuffer?.();
-								}
 							};
 							// Consume both outcomes: `finally()` would create a second rejected
 							// promise when the boundary handler fails, even though the queue's
@@ -1748,7 +1786,13 @@ export const streamCursor: StreamFunction<"cursor-agent"> = (
 
 			h2Request.on("data", (chunk: Buffer) => {
 				let offset = 0;
-				while (offset < chunk.length && !h2Settled && !transportTerminalized) {
+				while (
+					offset < chunk.length &&
+					!h2Settled &&
+					!transportTerminalized &&
+					!terminalBoundarySeen &&
+					!terminalBoundaryObserved
+				) {
 					const available = CURSOR_MAX_PENDING_SERVER_BYTES - pendingBuffer.length;
 					if (available <= 0) {
 						processPendingBuffer?.();
@@ -1851,6 +1895,7 @@ export const streamCursor: StreamFunction<"cursor-agent"> = (
 			pendingBuffer.clear();
 			bufferedObservationOffset = 0;
 			bufferedObservationTurnEnded = false;
+			terminalBoundaryObserved = false;
 			transportWatchdogClosed = true;
 			if (transportWatchdog) {
 				clearTimeout(transportWatchdog);
