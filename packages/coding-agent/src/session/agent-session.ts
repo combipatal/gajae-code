@@ -10155,6 +10155,8 @@ export class AgentSession {
 	}
 
 	async activateDiscoveredTools(toolNames: string[]): Promise<string[]> {
+		const identityAdmission = this.#captureSessionIdentityAdmission();
+		this.#assertSessionIdentityAdmission(identityAdmission);
 		const previousSelectedMCPToolNames = this.getSelectedMCPToolNames();
 		const previousSelectedDiscoveredBuiltinToolNames = this.#getSelectedDiscoveredBuiltinToolNames();
 		const nextActiveToolNames = this.getActiveToolNames();
@@ -10181,6 +10183,7 @@ export class AgentSession {
 		}
 		if (activated.length > 0) {
 			await this.#applyActiveToolsByName(nextActiveToolNames, {
+				identityAdmission,
 				previousSelectedMCPToolNames,
 				previousSelectedDiscoveredBuiltinToolNames,
 				nextSelectedDiscoveredBuiltinToolNames: [...nextSelectedDiscoveredBuiltinToolNames],
@@ -10501,6 +10504,8 @@ export class AgentSession {
 	 * refreshed definition visible to the next model call without restarting.
 	 */
 	async refreshSshTool(options?: { activateIfAvailable?: boolean }): Promise<void> {
+		const identityAdmission = this.#captureSessionIdentityAdmission();
+		this.#assertSessionIdentityAdmission(identityAdmission);
 		resetCapabilities();
 		if (!this.#reloadSshTool) return;
 		const previousSshTool = this.#toolRegistry.get("ssh");
@@ -10525,6 +10530,7 @@ export class AgentSession {
 		await invalidateHostMetadata(candidateHostNames);
 		const sshAllowed = this.#requestedToolNames === undefined || this.#requestedToolNames.has("ssh");
 		const refreshedTool = await this.#reloadSshTool();
+		this.#assertSessionIdentityAdmission(identityAdmission);
 		if (refreshedTool) {
 			this.#toolRegistry.set(refreshedTool.name, refreshedTool);
 			// A reloaded built-in is a NEW object. Without this it would replace the proven
@@ -10539,7 +10545,7 @@ export class AgentSession {
 		if (refreshedTool && sshAllowed && (wasActive || (options?.activateIfAvailable && !hadSshTool))) {
 			nextActive.push(refreshedTool.name);
 		}
-		await this.#applyActiveToolsByName(nextActive);
+		await this.#applyActiveToolsByName(nextActive, { identityAdmission });
 	}
 
 	/**
@@ -10694,6 +10700,10 @@ export class AgentSession {
 	 * This allows /mcp add/remove/reauth to take effect without restarting the session.
 	 */
 	async refreshMCPTools(mcpTools: CustomTool[]): Promise<void> {
+		const identityAdmission = this.#captureSessionIdentityAdmission();
+		this.#assertSessionIdentityAdmission(identityAdmission);
+		this.#assertNoSessionTransitionAdmission({ allowInternalTransitionEmission: true });
+		this.#assertSessionIdentityAdmission(identityAdmission);
 		const previousSelectedMCPToolNames = this.getSelectedMCPToolNames();
 		const existingNames = Array.from(this.#toolRegistry.keys());
 		for (const name of existingNames) {
@@ -10734,6 +10744,7 @@ export class AgentSession {
 		}
 		const nextActive = [...this.#getActiveNonMCPToolNames(), ...this.getSelectedMCPToolNames()];
 		await this.#applyActiveToolsByName(nextActive, {
+			identityAdmission,
 			previousSelectedMCPToolNames,
 			persistMCPSelection: hasPersistedMCPToolSelection,
 		});
@@ -10786,10 +10797,13 @@ export class AgentSession {
 	 * Refresh plugin sub-skill tools after workflow/sub-skill activation or phase changes.
 	 */
 	async refreshGjcSubskillTools(): Promise<void> {
+		const identityAdmission = this.#captureSessionIdentityAdmission();
+		this.#assertSessionIdentityAdmission(identityAdmission);
 		const activeState = await readVisibleSkillActiveState(
 			this.sessionManager.getCwd(),
 			this.sessionManager.getSessionId(),
 		);
+		this.#assertSessionIdentityAdmission(identityAdmission);
 		const activeSkill =
 			this.#activeSkillState?.skill ??
 			activeState?.skill ??
@@ -10806,6 +10820,7 @@ export class AgentSession {
 			this.#invalidateDiscoveryCaches();
 			await this.#applyActiveToolsByName(
 				previousActiveToolNames.filter(name => !previousGjcSubskillToolNames.has(name)),
+				{ identityAdmission },
 			);
 			return;
 		}
@@ -10827,6 +10842,7 @@ export class AgentSession {
 			reservedToolNames,
 			agentDir: this.getSessionAgentDir(),
 		});
+		this.#assertSessionIdentityAdmission(identityAdmission);
 		const nextToolNames = customTools.map(tool => tool.name);
 		const uniqueToolNames = new Set(nextToolNames);
 		if (uniqueToolNames.size !== nextToolNames.length) {
@@ -10875,6 +10891,7 @@ export class AgentSession {
 					...autoActivatedGjcSubskillToolNames,
 				]),
 			),
+			{ identityAdmission },
 		);
 	}
 
