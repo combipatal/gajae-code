@@ -2974,7 +2974,7 @@ export class AgentSession {
 					if (
 						manager?.isDeliverySuppressed(job.id, job.generation) ||
 						this.#isDisposed ||
-						this.#sessionTransitionKind !== undefined
+						this.#sessionTransitionDropsAsync
 					) {
 						if (registration) unregisterOwnedRegistration(registration);
 						manager?.clearParkedDelivery(job.generation);
@@ -3436,6 +3436,7 @@ export class AgentSession {
 	 * orchestrator does not hold it), so there is no self-deadlock.
 	 */
 	#sessionTransitionKind: string | undefined;
+	#sessionTransitionDropsAsync = false;
 	#coordinatorPersistGeneration = 0;
 	#coordinatorRescopeBarrier: Promise<void> | undefined;
 	#releaseCoordinatorRescopeBarrier: (() => void) | undefined;
@@ -3505,11 +3506,13 @@ export class AgentSession {
 			);
 		}
 		this.#sessionTransitionKind = kind;
+		this.#sessionTransitionDropsAsync = kind !== "compact" && kind !== "switch-session";
 		this.#coordinatorPersistGeneration += 1;
 	}
 
 	#endSessionTransition(): void {
 		this.#sessionTransitionKind = undefined;
+		this.#sessionTransitionDropsAsync = false;
 		this.yieldQueue.rearmIdle();
 	}
 
@@ -4557,7 +4560,7 @@ export class AgentSession {
 			isStreaming: () =>
 				this.isStreaming || this.#handoffTransitionActive || this.#sessionTransitionKind !== undefined,
 			injectStreaming: message => {
-				if (this.#isDisposed || this.#sessionTransitionKind !== undefined) {
+				if (this.#isDisposed || this.#sessionTransitionDropsAsync) {
 					this.#settleDeliveredOwnedRegistrations([message]);
 					return;
 				}
@@ -5834,6 +5837,10 @@ export class AgentSession {
 
 	get isSessionTransitioning(): boolean {
 		return this.#sessionTransitionKind !== undefined;
+	}
+
+	get isAsyncDeliverySuppressed(): boolean {
+		return this.#sessionTransitionDropsAsync;
 	}
 
 	registerToolSessionCleanup(cleanup: () => Promise<void> | void): () => void {
@@ -23380,6 +23387,7 @@ export class AgentSession {
 				const didReloadConversationChange =
 					!switchingToDifferentSession &&
 					this.#didSessionMessagesChange(previousSessionContext.messages, sessionContext.messages);
+				this.#sessionTransitionDropsAsync = switchingToDifferentSession || didReloadConversationChange;
 				const historyRewriteReason = switchingToDifferentSession
 					? "session-switch"
 					: didReloadConversationChange
