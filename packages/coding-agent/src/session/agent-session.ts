@@ -4559,6 +4559,7 @@ export class AgentSession {
 		this.yieldQueue = new YieldQueue({
 			isStreaming: () =>
 				this.isStreaming || this.#handoffTransitionActive || this.#sessionTransitionKind !== undefined,
+			isTransitionFenced: () => this.#sessionTransitionKind !== undefined,
 			injectStreaming: message => {
 				if (this.#isDisposed || this.#sessionTransitionDropsAsync) {
 					this.#settleDeliveredOwnedRegistrations([message]);
@@ -15511,6 +15512,7 @@ export class AgentSession {
 			this.#resetHindsightConversationTrackingIfHindsight();
 			this.#steeringMessages = [];
 			this.#followUpMessages = [];
+			this.#settleDeliveredOwnedRegistrations(this.#pendingNextTurnMessages.map(entry => entry.message));
 			this.#pendingNextTurnMessages = [];
 			this.#scheduledHiddenNextTurnGeneration = undefined;
 			await this.#initializeNewSessionState(nextDiscoverySessionToolNames, previousSessionFile);
@@ -15594,6 +15596,7 @@ export class AgentSession {
 			this.#resetHindsightConversationTrackingIfHindsight();
 			this.#steeringMessages = [];
 			this.#followUpMessages = [];
+			this.#settleDeliveredOwnedRegistrations(this.#pendingNextTurnMessages.map(entry => entry.message));
 			this.#pendingNextTurnMessages = [];
 			this.#scheduledHiddenNextTurnGeneration = undefined;
 			await this.#initializeNewSessionState(nextDiscoverySessionToolNames, previousSessionFile);
@@ -15722,6 +15725,7 @@ export class AgentSession {
 			this.#syncAgentSessionId(sessionId);
 			this.#steeringMessages = [];
 			this.#followUpMessages = [];
+			this.#settleDeliveredOwnedRegistrations(this.#pendingNextTurnMessages.map(entry => entry.message));
 			this.#pendingNextTurnMessages = [];
 			this.#scheduledHiddenNextTurnGeneration = undefined;
 
@@ -23390,7 +23394,7 @@ export class AgentSession {
 				const didReloadConversationChange =
 					!switchingToDifferentSession &&
 					this.#didSessionMessagesChange(previousSessionContext.messages, sessionContext.messages);
-				this.#sessionTransitionDropsAsync = switchingToDifferentSession || didReloadConversationChange;
+
 				const historyRewriteReason = switchingToDifferentSession
 					? "session-switch"
 					: didReloadConversationChange
