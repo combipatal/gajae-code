@@ -3618,6 +3618,7 @@ export async function createAgentSession(options: CreateAgentSessionOptions = {}
 					cwd,
 					agentDir,
 					settings,
+					profileAuthority,
 				);
 				discoveredHookExtensions.push(...hookExtensions.factories);
 				for (const error of hookExtensions.errors) {
