@@ -15452,6 +15452,9 @@ export class AgentSession {
 			this.#closeAllProviderSessions("new session");
 			this.#rebindProviderSessionState(new Map());
 			this.#terminalizeQueuedSdkWorkForSessionTransition(this.#queuedMessagesForSessionTransition());
+			this.#settleDeliveredOwnedRegistrations(this.yieldQueue.drainKindMessages("async-result", true));
+			this.#suppressOwnAsyncJobDeliveries();
+			this.yieldQueue.clearKind("async-result");
 			this.#resetActiveSdkRunOwnership();
 			this.agent.reset();
 			if (!options?.drop) await this.sessionManager.flush();
@@ -15700,6 +15703,7 @@ export class AgentSession {
 			this.#planReferencePath = "local://PLAN.md";
 			this.#resetInjectedContextSignatures();
 			this.#resetIrcRosterDeliveryState();
+			this.#resetHindsightConversationTrackingIfHindsight();
 			this.#reconnectToAgent();
 			return true;
 		} finally {
@@ -18188,6 +18192,7 @@ export class AgentSession {
 				// not the successor. Suppress and drop ONLY the async-result kind so they
 				// never flush into the new session; MCP resource notifications are
 				// server-scoped and are preserved for the successor.
+				this.#settleDeliveredOwnedRegistrations(this.yieldQueue.drainKindMessages("async-result", true));
 				this.#suppressOwnAsyncJobDeliveries();
 				this.yieldQueue.clearKind("async-result");
 
