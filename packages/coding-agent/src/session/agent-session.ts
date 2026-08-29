@@ -15585,6 +15585,8 @@ export class AgentSession {
 		nextDiscoverySessionToolNames: string[] | undefined,
 		previousSessionFile: string | undefined,
 	): Promise<void> {
+		this.#resetInjectedContextSignatures();
+		this.#resetIrcRosterDeliveryState();
 		// The successor session must not inherit the predecessor's profile marker
 		// or its runtime role overrides; a durable `modelProfile.default` is
 		// reapplied by the startup policy on a fresh launch instead.
@@ -15671,6 +15673,7 @@ export class AgentSession {
 			await this.abort();
 			this.#cancelOwnAsyncJobs();
 			this.#suppressOwnAsyncJobDeliveries();
+			this.#settleDeliveredOwnedRegistrations(this.yieldQueue.drainMessages());
 			this.yieldQueue.clear();
 			this.#pendingBackgroundExchanges = [];
 			this.#closeAllProviderSessions("context clear");
@@ -15694,6 +15697,8 @@ export class AgentSession {
 			this.#todoReminderCount = 0;
 			this.#planReferenceSent = false;
 			this.#planReferencePath = "local://PLAN.md";
+			this.#resetInjectedContextSignatures();
+			this.#resetIrcRosterDeliveryState();
 			this.#reconnectToAgent();
 			return true;
 		} finally {
