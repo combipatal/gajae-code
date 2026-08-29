@@ -18,6 +18,7 @@ import {
 	type ClaudePluginRoot,
 	canonicalizePathWithinHome,
 	createSourceMeta,
+	getReadOptions,
 	listClaudePluginRoots,
 	loadFilesFromDir,
 	scanSkillsFromDir,
@@ -48,9 +49,10 @@ async function readPluginManifest(
 		ctx,
 		path.join(root.path, ".claude-plugin", "plugin.json"),
 		root.path,
+		root.scope,
 	);
 	if (!manifestPath) return null;
-	const raw = await readFile(manifestPath);
+	const raw = await readFile(manifestPath, getReadOptions(ctx, root.scope));
 	if (raw === null) return null;
 
 	try {
@@ -93,7 +95,7 @@ async function resolvePluginDir(
 
 	const resolved = path.resolve(root.path, configured);
 	if (isWithinPluginRoot(root.path, resolved)) {
-		const canonical = await canonicalizePathWithinHome(ctx, resolved, root.path);
+		const canonical = await canonicalizePathWithinHome(ctx, resolved, root.path, root.scope);
 		if (canonical) return { dir: canonical };
 	}
 
@@ -142,6 +144,7 @@ async function loadSkills(ctx: LoadContext): Promise<LoadResult<Skill>> {
 				providerId: PROVIDER_ID,
 				level: root.scope,
 				containmentRoot: root.path,
+				scope: root.scope,
 			});
 			return { root, result, warning };
 		}),
@@ -181,6 +184,7 @@ async function loadSlashCommands(ctx: LoadContext): Promise<LoadResult<SlashComm
 			const result = await loadFilesFromDir<SlashCommand>(ctx, commandsDir, PROVIDER_ID, root.scope, {
 				extensions: ["md"],
 				containmentRoot: root.path,
+				scope: root.scope,
 				transform: (name, content, filePath, source) => {
 					const cmdName = name.replace(/\.md$/, "");
 					return {
@@ -230,6 +234,7 @@ async function loadHooks(ctx: LoadContext): Promise<LoadResult<Hook>> {
 			const hooksDir = path.join(root.path, "hooks", hookType);
 			return loadFilesFromDir<Hook>(ctx, hooksDir, PROVIDER_ID, root.scope, {
 				containmentRoot: root.path,
+				scope: root.scope,
 				transform: (name, _content, filePath, source) => {
 					const toolName = name.replace(/\.(sh|bash|zsh|fish)$/, "");
 					return {
@@ -269,6 +274,7 @@ async function loadTools(ctx: LoadContext): Promise<LoadResult<CustomTool>> {
 			const toolsDir = path.join(root.path, "tools");
 			return loadFilesFromDir<CustomTool>(ctx, toolsDir, PROVIDER_ID, root.scope, {
 				containmentRoot: root.path,
+				scope: root.scope,
 				transform: (name, _content, filePath, source) => {
 					const toolName = name.replace(/\.(ts|js|sh|bash|py)$/, "");
 					return {
@@ -303,9 +309,9 @@ async function loadMCPServers(ctx: LoadContext): Promise<LoadResult<MCPServer>> 
 	warnings.push(...rootWarnings);
 
 	for (const root of roots) {
-		const mcpPath = await canonicalizePathWithinHome(ctx, path.join(root.path, ".mcp.json"), root.path);
+		const mcpPath = await canonicalizePathWithinHome(ctx, path.join(root.path, ".mcp.json"), root.path, root.scope);
 		if (!mcpPath) continue;
-		const raw = await readFile(mcpPath);
+		const raw = await readFile(mcpPath, getReadOptions(ctx, root.scope));
 		if (raw === null) continue; // file absent — skip silently
 
 		let parsed: unknown;
