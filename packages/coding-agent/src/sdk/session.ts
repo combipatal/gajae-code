@@ -2400,6 +2400,7 @@ export async function createAgentSession(options: CreateAgentSessionOptions = {}
 							sharedPoolIdleMs: settings.get("mcp.sharedPoolIdleMs"),
 							agentDir,
 							settings,
+							profileAuthority,
 						});
 						stagedMcpCleanup.set(
 							nextManager,
@@ -3402,6 +3403,7 @@ export async function createAgentSession(options: CreateAgentSessionOptions = {}
 				sharedPoolIdleMs: settings.get("mcp.sharedPoolIdleMs"),
 				agentDir,
 				settings,
+				profileAuthority,
 				...(lifecycleMcpStartupTimeoutMs !== undefined
 					? { maxStartupTimeoutMs: lifecycleMcpStartupTimeoutMs }
 					: {}),
@@ -3493,6 +3495,7 @@ export async function createAgentSession(options: CreateAgentSessionOptions = {}
 						sharedPoolIdleMs: settings.get("mcp.sharedPoolIdleMs"),
 						agentDir,
 						settings,
+						profileAuthority,
 					});
 					owned.setAuthStorage(authStorage);
 					cleanupOwnedMcpManager = () => owned.disconnectAll();
