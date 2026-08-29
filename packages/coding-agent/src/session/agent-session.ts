@@ -3504,6 +3504,7 @@ export class AgentSession {
 
 	#endSessionTransition(): void {
 		this.#sessionTransitionKind = undefined;
+		this.yieldQueue.rearmIdle();
 	}
 
 	#activateNextSessionAdmission(): void {
@@ -4547,7 +4548,8 @@ export class AgentSession {
 		this.#setGuardedAgentTools(this.agent.state.tools);
 		this.#bindWorkflowGateEmitter();
 		this.yieldQueue = new YieldQueue({
-			isStreaming: () => this.isStreaming || this.#handoffTransitionActive,
+			isStreaming: () =>
+				this.isStreaming || this.#handoffTransitionActive || this.#sessionTransitionKind !== undefined,
 			injectStreaming: message => {
 				// Mandated boundary comment (corrected turn semantics): turn-scope
 				// abort blocks only deliveries whose origin is a continuation of the
@@ -15559,6 +15561,7 @@ export class AgentSession {
 			this.#closeAllProviderSessions("new session");
 			this.#rebindProviderSessionState(new Map());
 			this.#terminalizeQueuedSdkWorkForSessionTransition(this.#queuedMessagesForSessionTransition());
+			this.#quarantineQueuedAsyncResults();
 			this.#resetActiveSdkRunOwnership();
 			this.agent.reset();
 			this.setTodoPhases([]);
