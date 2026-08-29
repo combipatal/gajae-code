@@ -4833,6 +4833,7 @@ export async function createAgentSession(options: CreateAgentSessionOptions = {}
 			// absent, the injected settings instance's own profile wins via the
 			// AgentSession fallback - never the process default.
 			agentDir: options.agentDir,
+			profileAuthority,
 			memoryBackend: runtimeServices.memoryBackend,
 			notificationSessionController,
 			evalKernelOwnerId,
