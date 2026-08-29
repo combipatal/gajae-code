@@ -3506,7 +3506,7 @@ export class AgentSession {
 			);
 		}
 		this.#sessionTransitionKind = kind;
-		this.#sessionTransitionDropsAsync = kind !== "compact" && kind !== "switch-session";
+		this.#sessionTransitionDropsAsync = false;
 		this.#coordinatorPersistGeneration += 1;
 	}
 
@@ -6009,6 +6009,7 @@ export class AgentSession {
 	}
 
 	#quarantineQueuedAsyncResults(): void {
+		this.#sessionTransitionDropsAsync = true;
 		this.#suppressOwnAsyncJobDeliveries();
 		this.#settleDeliveredOwnedRegistrations(this.yieldQueue.drainKindMessages("async-result", true));
 		this.yieldQueue.clearKind("async-result");
@@ -15705,6 +15706,7 @@ export class AgentSession {
 			this.#disconnectFromAgent();
 			await this.abort();
 			this.#cancelOwnAsyncJobs();
+			this.#sessionTransitionDropsAsync = true;
 			this.#suppressOwnAsyncJobDeliveries();
 			const queuedMessages = this.yieldQueue.drainMessages(true);
 			this.#settleDeliveredOwnedRegistrations(queuedMessages);
@@ -15861,6 +15863,7 @@ export class AgentSession {
 			this.#syncAgentSessionId();
 			this.#bindWorkflowGateEmitter(previousWorkflowGateSessionId);
 			this.#rekeyHindsightMemoryForCurrentSessionId();
+			this.#resetHindsightConversationTrackingIfHindsight();
 
 			this.#resetIrcRosterDeliveryState();
 
