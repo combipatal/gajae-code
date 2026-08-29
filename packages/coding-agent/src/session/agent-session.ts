@@ -15790,6 +15790,7 @@ export class AgentSession {
 						getSessionId: () => forkedManager.getSessionId(),
 					});
 					await this.#settleOwnAsyncJobsBeforeArtifactRetirement();
+					this.#quarantineQueuedAsyncResults();
 					this.#assertJobManagerEndpointAdmission(forkedManager.getSessionId(), forkedManager.getSessionFile());
 				} catch (error) {
 					const forkedFile = forkedManager.getSessionFile();
@@ -15838,6 +15839,7 @@ export class AgentSession {
 				try {
 					await initializeLocalRoot(this.#localProtocolOptions(prepared));
 					await this.#settleOwnAsyncJobsBeforeArtifactRetirement();
+					this.#quarantineQueuedAsyncResults();
 					this.#assertJobManagerEndpointAdmission(prepared.sessionId, prepared.sessionFile);
 					this.sessionManager.commitPreparedNewSession(prepared);
 					// Fork commits a successor endpoint identity; re-register the
@@ -18164,6 +18166,7 @@ export class AgentSession {
 				// Last fallible action: verified local:// readiness from immutable staged options.
 				await initializeLocalRoot(this.#localProtocolOptions(prepared));
 				await this.#settleOwnAsyncJobsBeforeArtifactRetirement();
+				this.#quarantineQueuedAsyncResults();
 				this.#assertJobManagerEndpointAdmission(prepared.sessionId, prepared.sessionFile);
 
 				// --- Commit boundary: synchronous adoption is the sole identity publication.
@@ -23748,6 +23751,7 @@ export class AgentSession {
 			try {
 				await initializeLocalRoot(this.#localProtocolOptions(prepared));
 				await this.#settleOwnAsyncJobsBeforeArtifactRetirement();
+				this.#quarantineQueuedAsyncResults();
 				this.#assertJobManagerEndpointAdmission(prepared.sessionId, prepared.sessionFile);
 				this.sessionManager.commitPreparedNewSession(prepared);
 				// Branch commits a successor endpoint identity; re-register the
@@ -23991,6 +23995,7 @@ export class AgentSession {
 				historyRewrite: { reason: "tree-navigation", preserveSeededPrefix: true },
 			});
 			this.#resetInjectedContextSignatures();
+			this.#resetHindsightConversationTrackingIfHindsight();
 			this.#syncTodoPhasesFromBranch();
 			this.#closeCodexProviderSessionsForHistoryRewrite();
 
