@@ -3121,7 +3121,9 @@ test("broker fences ambiguous state roots from checkpoint, endpoint, and resume 
 			endpointPath,
 			JSON.stringify({ sessionId, pid: process.pid, url: "ws://127.0.0.1:1", token: "current-token" }),
 		);
-		const endpointMtimeMs = (await fs.stat(endpointPath)).mtimeMs;
+		const endpointIdentity = await fs.stat(endpointPath, { bigint: true });
+		const endpointMtimeMs = Number(endpointIdentity.mtimeNs) / 1_000_000;
+		const endpointFileId = `${endpointIdentity.dev}:${endpointIdentity.ino}`;
 		await broker.start();
 		setLifecycleCommandResolverForTest(broker, () => {
 			launchAttempts += 1;
@@ -3142,6 +3144,7 @@ test("broker fences ambiguous state roots from checkpoint, endpoint, and resume 
 			endpointGeneration: 2,
 			pid: process.pid,
 			endpointMtimeMs,
+			endpointFileId,
 		});
 		expect(broker.index.listSessions().sessions).toEqual([
 			expect.objectContaining({
@@ -3197,6 +3200,7 @@ test("broker fences ambiguous state roots from checkpoint, endpoint, and resume 
 			result: {
 				sessionId,
 				endpointGeneration: current.endpointGeneration,
+				endpointFileId,
 				reused: true,
 				endpoint: { token: "current-token" },
 			},
@@ -4909,7 +4913,9 @@ test("idempotent lifecycle replay refreshes authority after a broker restart", a
 			endpointPath,
 			JSON.stringify({ sessionId, pid: host.pid, url: "ws://127.0.0.1:1", token: "successor-token" }),
 		);
-		const endpointMtimeMs = (await fs.stat(endpointPath)).mtimeMs;
+		const endpointIdentity = await fs.stat(endpointPath, { bigint: true });
+		const endpointMtimeMs = Number(endpointIdentity.mtimeNs) / 1_000_000;
+		const endpointFileId = `${endpointIdentity.dev}:${endpointIdentity.ino}`;
 		const hostIncarnation = await incarnation(host.pid);
 		initial = new Broker({ agentDir });
 		await initial.start();
@@ -4920,6 +4926,7 @@ test("idempotent lifecycle replay refreshes authority after a broker restart", a
 			endpointGeneration: 2,
 			pid: host.pid,
 			endpointMtimeMs,
+			endpointFileId,
 			processIncarnation: hostIncarnation,
 			hostIncarnation,
 		});
@@ -4965,6 +4972,7 @@ test("idempotent lifecycle replay refreshes authority after a broker restart", a
 				endpointGeneration: 2,
 				pid: host.pid,
 				endpointMtimeMs,
+				endpointFileId,
 				reused: true,
 				endpoint: {
 					sessionId,
