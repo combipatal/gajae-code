@@ -1503,10 +1503,17 @@ describe("SessionRouter dispatch authority", () => {
 	});
 
 	test("adopts rounded lifecycle authority only with the exact endpoint file identity", async () => {
-		const fixture = await routerFixture({ initiallyIndexed: false });
+		const removed: Array<string | undefined> = [];
+		const fixture = await routerFixture({
+			initiallyIndexed: false,
+			onSessionRemoved: (_attachment, reason) => {
+				removed.push(reason);
+			},
+		});
 		const endpoint = JSON.parse(fs.readFileSync(fixture.endpointFile, "utf8")) as Record<string, unknown>;
 		const identity = fs.statSync(fixture.endpointFile, { bigint: true });
-		fixture.authority.endpointMtimeMs = Number(identity.mtimeNs) / 1_000_000 + 0.0005;
+		const descriptorMtimeMs = Number(identity.mtimeNs) / 1_000_000;
+		fixture.authority.endpointMtimeMs = descriptorMtimeMs + 0.0005;
 		fixture.authority.endpointFileId = `${identity.dev}:${identity.ino}`;
 		const adopted = await fixture.router.adoptLifecycleResult(
 			{
@@ -1515,7 +1522,7 @@ describe("SessionRouter dispatch authority", () => {
 					sessionId: fixture.sessionId,
 					endpointGeneration: fixture.authority.generation,
 					pid: fixture.authority.pid,
-					endpointMtimeMs: fixture.authority.endpointMtimeMs,
+					endpointMtimeMs: descriptorMtimeMs,
 					endpointFileId: fixture.authority.endpointFileId,
 					endpoint,
 				},
@@ -1526,6 +1533,7 @@ describe("SessionRouter dispatch authority", () => {
 			expect(adopted.isCurrent()).toBe(false);
 			fixture.authority.indexed = true;
 			await fixture.router.reconcile();
+			expect(removed).toEqual([]);
 			expect(adopted.isCurrent()).toBe(true);
 			expect(fixture.router.attachment(fixture.sessionId)).toBe(adopted);
 		} finally {
