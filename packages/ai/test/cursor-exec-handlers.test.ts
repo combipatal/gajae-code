@@ -1176,7 +1176,7 @@ describe("Cursor request lifecycle", () => {
 		}
 	});
 
-	it("drains coalesced progress before a trailer terminal while an exec is held", async () => {
+	it("drains admitted progress before a trailer terminal when exec follows it", async () => {
 		const { promise: releasePromise, resolve: releaseHandler } = Promise.withResolvers<void>();
 		const { promise: handlerStarted, resolve: markHandlerStarted } = Promise.withResolvers<void>();
 		const server = http2.createServer();
@@ -1212,10 +1212,10 @@ describe("Cursor request lifecycle", () => {
 				});
 				stream.end(
 					Buffer.concat([
-						frameServerMessage(createReadExecMessage()),
 						frameServerMessage(text),
 						frameServerMessage(tokens),
 						frameServerMessage(checkpoint),
+						frameServerMessage(createReadExecMessage()),
 					]),
 				);
 			});
