@@ -273,7 +273,7 @@ export class ExtensionRunner {
 	#pendingCredentialDisabled: CredentialDisabledEvent[] = [];
 
 	constructor(
-		private readonly extensions: Extension[],
+		private extensions: Extension[],
 		private readonly runtime: ExtensionRuntime,
 		private cwd: string,
 		private sessionManager: SessionManager,
@@ -291,6 +291,12 @@ export class ExtensionRunner {
 	rebindScope(cwd: string, settings?: Settings): void {
 		this.cwd = cwd;
 		this.settings = settings;
+	}
+
+	/** Replace cwd-discovered extensions after a session rescope. */
+	rebindExtensions(extensions: Extension[]): void {
+		this.extensions = extensions;
+		this.#handlersByEvent = ExtensionRunner.#indexHandlers(extensions);
 	}
 
 	/** Rebind the persistence authority after a committed cold-fork adoption. */
