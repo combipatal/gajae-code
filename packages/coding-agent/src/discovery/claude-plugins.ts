@@ -116,7 +116,16 @@ async function listNonGjcPluginRoots(
 	const filteredWarnings = [...warnings];
 
 	for (const root of roots) {
-		if (await rootContainsGjcManifest(root.path)) {
+		const manifestReadOptions = isolatedHome
+			? {
+					isolatedHome: true,
+					home,
+					homeIdentity,
+					scope: "project" as const,
+					bypassCache: true,
+				}
+			: undefined;
+		if (await rootContainsGjcManifest(root.path, manifestReadOptions)) {
 			filteredWarnings.push(`[claude-plugins] Skipping gajae-code plugin root (binding-only): ${root.path}`);
 			continue;
 		}
