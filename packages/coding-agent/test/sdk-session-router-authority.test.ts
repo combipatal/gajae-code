@@ -1522,7 +1522,7 @@ describe("SessionRouter dispatch authority", () => {
 					sessionId: fixture.sessionId,
 					endpointGeneration: fixture.authority.generation,
 					pid: fixture.authority.pid,
-					endpointMtimeMs: descriptorMtimeMs,
+					endpointMtimeMs: fixture.authority.endpointMtimeMs,
 					endpointFileId: fixture.authority.endpointFileId,
 					endpoint,
 				},
