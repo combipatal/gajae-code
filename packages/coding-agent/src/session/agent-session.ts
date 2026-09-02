@@ -9404,7 +9404,8 @@ export class AgentSession {
 
 	#assertJobManagerEndpointAdmission(successorSessionId: string, successorSessionFile: string | undefined): void {
 		const successorEndpointId = this.#asyncJobEndpointId(successorSessionId, successorSessionFile);
-		const ownManager = this.#ownedAsyncJobManager ?? AsyncJobManager.instance();
+		const ownManager = this.#ownedAsyncJobManager;
+		if (!ownManager) return;
 		const successorOwner = AsyncJobManager.forEndpoint(successorEndpointId);
 		if (ownManager && successorOwner !== undefined && successorOwner !== ownManager) {
 			throw new Error(
@@ -9427,7 +9428,7 @@ export class AgentSession {
 		options: { predecessorSessionId?: string; predecessorSessionFile?: string } = {},
 	): { endpointId: string; release: () => void; finalize: () => void } | undefined {
 		const endpointId = this.#asyncJobEndpointId(successorSessionId, successorSessionFile);
-		const ownManager = this.#ownedAsyncJobManager ?? AsyncJobManager.instance();
+		const ownManager = this.#ownedAsyncJobManager;
 		if (!ownManager) return undefined;
 		this.#assertJobManagerEndpointAdmission(successorSessionId, successorSessionFile);
 		if (AsyncJobManager.forEndpoint(endpointId) === ownManager) {
@@ -9491,7 +9492,8 @@ export class AgentSession {
 		// manager means another live session currently carries this id —
 		// neither the mapping nor the tuples keyed under it are ours to move
 		// or retire (review thread P1).
-		const ownManager = this.#ownedAsyncJobManager ?? AsyncJobManager.instance();
+		const ownManager = this.#ownedAsyncJobManager;
+		if (!ownManager) return;
 		if (predecessorOwner !== undefined && predecessorOwner !== ownManager) return;
 		if (predecessorOwner !== undefined) {
 			const rekeyed = AsyncJobManager.rekeyForEndpoint(previousEndpointId, currentEndpointId, predecessorOwner);
