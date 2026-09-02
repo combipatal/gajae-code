@@ -2,6 +2,7 @@
 
 ## [Unreleased]
 
+- SDK `turn.prompt` now fails closed when a provider returns only empty reasoning metadata with explicitly reported zero token usage, while preserving real text, reasoning, tool-call, positive-token, omitted-usage, and explicit cancellation evidence as valid terminal activity. (#5015)
 - Session-state lock acquisition now retries immediately after positively proving and identity-reclaiming a dead transition owner, so forced exits no longer add a retry delay to the next resume while unproven or live claims retain the bounded backoff path.
 - Coordinator persist failures now include typed lock-cause fields and use a per-document, per-failure-class 30-second warn window; proven-refused local model discovery is debug-level, and `session_closed` delivery failures route by attached-client count.
 - `gjc update` now identifies the active Linux libc instead of treating an optional installed musl loader as proof that a glibc-based Ubuntu host runs musl.
