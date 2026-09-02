@@ -90,10 +90,25 @@ export function processStartTime(pid: number): string | null {
 }
 
 let ownProcessStartTime: string | undefined;
+let ownProcessIncarnation: string | null | undefined;
 
 function currentProcessStartTime(): string {
 	if (ownProcessStartTime === undefined) ownProcessStartTime = processStartTime(process.pid) ?? "unknown";
 	return ownProcessStartTime;
+}
+
+function processIncarnation(pid: number): string | null {
+	try {
+		const incarnation = nativeProcessBindings().Process.fromPid(pid)?.incarnation;
+		return typeof incarnation === "string" && incarnation.length > 0 ? incarnation : null;
+	} catch {
+		return null;
+	}
+}
+
+function currentProcessIncarnation(): string | null {
+	if (ownProcessIncarnation === undefined) ownProcessIncarnation = processIncarnation(process.pid);
+	return ownProcessIncarnation;
 }
 
 function cachedProcessStartTime(owner: FileLockOwnerToken, cache?: Map<string, string | null>): string | null {
@@ -108,6 +123,10 @@ function cachedProcessStartTime(owner: FileLockOwnerToken, cache?: Map<string, s
 
 function ownerIsAlive(owner: FileLockOwnerToken, startTimeCache?: Map<string, string | null>): boolean {
 	if (ownerLiveness(owner.pid) !== "alive") return false;
+	if (owner.process_incarnation) {
+		const currentIncarnation = processIncarnation(owner.pid);
+		return currentIncarnation === null || currentIncarnation === owner.process_incarnation;
+	}
 	if (!owner.start_time || owner.start_time === "unknown") return true;
 	const currentStartTime = cachedProcessStartTime(owner, startTimeCache);
 	if (currentStartTime === null || currentStartTime === owner.start_time) return true;
@@ -119,10 +138,12 @@ function ownerIsAlive(owner: FileLockOwnerToken, startTimeCache?: Map<string, st
 }
 
 function lockInfo(ownerHostId: string | undefined, ownerToken: string): LockInfo {
+	const incarnation = currentProcessIncarnation();
 	return {
 		pid: process.pid,
 		start_time: currentProcessStartTime(),
 		start_time_format: PROCESS_START_TIME_FORMAT,
+		...(incarnation === null ? {} : { process_incarnation: incarnation }),
 		timestamp: Date.now(),
 		owner_token: ownerToken,
 		...(ownerHostId === undefined ? {} : { owner_host_id: ownerHostId }),
@@ -316,7 +337,8 @@ async function readLockInfo(lockPath: string): Promise<LockInfo | null> {
 	}
 
 	if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) return null;
-	const { pid, start_time, start_time_format, timestamp, owner_host_id, owner_token } = parsed as Partial<LockInfo>;
+	const { pid, start_time, start_time_format, process_incarnation, timestamp, owner_host_id, owner_token } =
+		parsed as Partial<LockInfo>;
 	if (
 		typeof pid !== "number" ||
 		!Number.isInteger(pid) ||
@@ -325,11 +347,12 @@ async function readLockInfo(lockPath: string): Promise<LockInfo | null> {
 		!Number.isFinite(timestamp) ||
 		(start_time !== undefined && (typeof start_time !== "string" || !start_time)) ||
 		(start_time_format !== undefined && (typeof start_time_format !== "string" || !start_time_format)) ||
+		(process_incarnation !== undefined && (typeof process_incarnation !== "string" || !process_incarnation)) ||
 		(owner_host_id !== undefined && (typeof owner_host_id !== "string" || !owner_host_id)) ||
 		(owner_token !== undefined && (typeof owner_token !== "string" || !owner_token))
 	)
 		return null;
-	return { pid, start_time, start_time_format, timestamp, owner_host_id, owner_token };
+	return { pid, start_time, start_time_format, process_incarnation, timestamp, owner_host_id, owner_token };
 }
 
 function parseLockInfoBytes(bytes: string): LockInfo | null {
@@ -340,7 +363,8 @@ function parseLockInfoBytes(bytes: string): LockInfo | null {
 		return null;
 	}
 	if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) return null;
-	const { pid, start_time, start_time_format, timestamp, owner_host_id, owner_token } = parsed as Partial<LockInfo>;
+	const { pid, start_time, start_time_format, process_incarnation, timestamp, owner_host_id, owner_token } =
+		parsed as Partial<LockInfo>;
 	if (
 		typeof pid !== "number" ||
 		!Number.isInteger(pid) ||
@@ -349,11 +373,12 @@ function parseLockInfoBytes(bytes: string): LockInfo | null {
 		!Number.isFinite(timestamp) ||
 		(start_time !== undefined && (typeof start_time !== "string" || !start_time)) ||
 		(start_time_format !== undefined && (typeof start_time_format !== "string" || !start_time_format)) ||
+		(process_incarnation !== undefined && (typeof process_incarnation !== "string" || !process_incarnation)) ||
 		(owner_host_id !== undefined && (typeof owner_host_id !== "string" || !owner_host_id)) ||
 		(owner_token !== undefined && (typeof owner_token !== "string" || !owner_token))
 	)
 		return null;
-	return { pid, start_time, start_time_format, timestamp, owner_host_id, owner_token };
+	return { pid, start_time, start_time_format, process_incarnation, timestamp, owner_host_id, owner_token };
 }
 
 /** @internal */
@@ -382,6 +407,8 @@ export async function readFileLockInfoForGc(lockDir: string): Promise<FileLockOw
 /** Owner identity stamped into a `<file>.lock/info` record. */
 export interface FileLockOwnerToken {
 	pid: number;
+	/** Kernel-derived identity for the exact process generation owning `pid`. */
+	process_incarnation?: string;
 	start_time?: string;
 	/** Encoding marker for the canonical UTC process-start identity. */
 	start_time_format?: string;
@@ -558,6 +585,11 @@ async function localLockKey(lockPath: string): Promise<string> {
 }
 
 function ownerIncarnationChanged(owner: FileLockOwnerToken, startTimeCache?: Map<string, string | null>): boolean {
+	if (owner.process_incarnation) {
+		if (ownerLiveness(owner.pid) !== "alive") return false;
+		const currentIncarnation = processIncarnation(owner.pid);
+		return currentIncarnation !== null && currentIncarnation !== owner.process_incarnation;
+	}
 	if (owner.start_time_format !== PROCESS_START_TIME_FORMAT || !owner.start_time || owner.start_time === "unknown")
 		return false;
 	if (ownerLiveness(owner.pid) !== "alive") return false;
@@ -639,6 +671,7 @@ export async function removeFileLockDirForGc(
 	if (!expectedIdentity) return "owner_changed";
 	if (
 		current.pid !== expected.pid ||
+		(expected.process_incarnation !== undefined && current.process_incarnation !== expected.process_incarnation) ||
 		(expected.start_time !== undefined && current.start_time !== expected.start_time) ||
 		current.owner_host_id !== expected.owner_host_id ||
 		(expected.owner_token !== undefined && current.owner_token !== expected.owner_token) ||
@@ -1173,7 +1206,7 @@ async function lockHolderDescription(lockPath: string): Promise<string> {
 	}
 }
 
-async function acquireLock(filePath: string, options: FileLockOptions = {}): Promise<() => Promise<void>> {
+export async function acquireFileLock(filePath: string, options: FileLockOptions = {}): Promise<() => Promise<void>> {
 	const requestedFilePath: unknown = filePath;
 	if (typeof requestedFilePath !== "string" || requestedFilePath.length === 0 || !path.isAbsolute(requestedFilePath))
 		throw new TypeError("filePath must be a non-empty absolute path");
@@ -1245,7 +1278,7 @@ export async function withFileLock<T>(
 	fn: () => Promise<T>,
 	options: FileLockOptions = {},
 ): Promise<T> {
-	const release = await acquireLock(filePath, options);
+	const release = await acquireFileLock(filePath, options);
 	let result: T;
 	try {
 		result = await fn();
