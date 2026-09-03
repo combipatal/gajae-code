@@ -6035,13 +6035,13 @@ export class AgentSession {
 	 */
 	#queueCoordinatorRuntimeStatePersist(event: AgentSessionEvent, propagateFailure = false): Promise<void> {
 		if (isNonDispatchedToolEvent(event)) return Promise.resolve();
-		const context = this.#captureCoordinatorRuntimeStatePersistContext();
 		const observation = this.#coordinatorToolObservations.get(event);
 		const admission = this.#agentEventAdmission.get(event);
 		const barrier = admission?.persistBarrier;
 		if (barrier) {
 			const run = async () => {
 				await barrier;
+				const context = this.#captureCoordinatorRuntimeStatePersistContext();
 				await this.#persistRuntimeStateInBackground(event, context, observation, propagateFailure);
 			};
 			const queued = barrier.then(() => this.#appendCoordinatorPersist(run));
@@ -6049,6 +6049,7 @@ export class AgentSession {
 			return queued;
 		}
 		const generation = admission?.persistGeneration ?? this.#coordinatorPersistGeneration;
+		const context = this.#captureCoordinatorRuntimeStatePersistContext();
 		const run = () =>
 			generation === this.#coordinatorPersistGeneration
 				? this.#persistRuntimeStateInBackground(event, context, observation, propagateFailure)
