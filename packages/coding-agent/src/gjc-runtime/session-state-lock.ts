@@ -241,7 +241,8 @@ function removeOwnedTransitionClaim(nativePath: string, generation: TransitionDi
 	if (!captured.ok || !captured.snapshot) return captured.code === "not_found";
 	const root = captured.snapshot.entries.find(entry => entry.relativePath === "");
 	if (
-		root?.kind !== "directory" ||
+		!root ||
+		root.kind !== "directory" ||
 		root.dev !== String(generation.dev) ||
 		root.ino !== String(generation.ino) ||
 		root.nlink !== String(generation.nlink) ||
@@ -1727,7 +1728,8 @@ async function reclaimStaleTransitionClaim(transitionDir: string, quarantineName
 	if (!captured.ok || !captured.snapshot) return false;
 	const root = captured.snapshot.entries.find(entry => entry.relativePath === "");
 	if (
-		root?.kind !== "directory" ||
+		!root ||
+		root.kind !== "directory" ||
 		root.dev !== String(generation.dev) ||
 		root.ino !== String(generation.ino) ||
 		root.nlink !== String(generation.nlink) ||

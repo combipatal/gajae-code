@@ -673,6 +673,7 @@ export class AsyncJobManager {
 	readonly #maxDeadLetterOverflowOwners: number;
 	#deliveryLoop: Promise<void> | undefined;
 	#disposed = false;
+	#disposing = false;
 	#runningOwnerCleanups = false;
 	readonly #subagentRecords = new Map<string, SubagentRecord>();
 	readonly #terminalEvents = new Map<string, TerminalEvent>();
@@ -2787,6 +2788,7 @@ export class AsyncJobManager {
 		} finally {
 			this.#runningOwnerCleanups = false;
 		}
+		this.#disposing = true;
 		this.cancelAll();
 		for (const tombstone of this.#monitorTombstones.values()) {
 			try {
