@@ -171,6 +171,13 @@ async function selectFirstProfile(controller: SelectorController, setDefault = f
 }
 
 describe("model selector profiles", () => {
+	test("reuses the session catalog without refreshing it when the selector opens", async () => {
+		const registry = createRegistry();
+		createSelector(() => {}, { registry });
+		await Bun.sleep(0);
+		expect(registry.refresh).not.toHaveBeenCalled();
+	});
+
 	test("catalog changes rebuild the active preset landing instead of switching to model view", async () => {
 		installTestTheme();
 		const profiles = new Map<string, ModelProfileDefinition>([[profile.name, profile]]);

@@ -19,6 +19,7 @@ type TestRegistryOptions = {
 	refresh?: (mode: "offline") => Promise<void>;
 	refreshProvider?: (providerId: string) => Promise<void>;
 	getDiscoverableProviders?: () => string[];
+	onCatalogChanged?: (listener: () => void) => () => void;
 	requestRender?: () => void;
 };
 function createSelector(
@@ -41,6 +42,7 @@ function createSelector(
 		getCanonicalModelSelections: () => [],
 		resolveCanonicalModel: () => undefined,
 		getModelProfile: () => undefined,
+		...(registryOptions.onCatalogChanged ? { onCatalogChanged: registryOptions.onCatalogChanged } : {}),
 	} as unknown as ModelRegistry;
 	const ui = { requestRender: vi.fn(registryOptions.requestRender ?? (() => {})) } as unknown as TUI;
 
@@ -237,9 +239,16 @@ describe("ModelSelector assignment menu role bindings", () => {
 
 		installTestTheme();
 		const catalog: Model[] = [model];
-		const selector = createSelector(model, settings, catalog, []);
-		// The provider's models land while the selector is still loading its catalog.
+		let catalogChanged: (() => void) | undefined;
+		const selector = createSelector(model, settings, catalog, [], {
+			onCatalogChanged: listener => {
+				catalogChanged = listener;
+				return () => {};
+			},
+		});
+		// The provider's models land after the selector opens.
 		catalog.push(lateModel);
+		catalogChanged?.();
 		await Bun.sleep(0);
 		installTestTheme();
 		selector.handleInput("\n");
@@ -380,7 +389,6 @@ describe("ModelSelector assignment menu role bindings", () => {
 		if (!model) throw new Error("Expected bundled model anthropic/claude-sonnet-4-5");
 		const replacement = { ...model, id: "replacement", name: "replacement" };
 		const catalog: Model[] = [model];
-		let refreshCalls = 0;
 		const selector = createSelector(
 			model,
 			Settings.isolated({ modelRoles: { default: `${model.provider}/${model.id}` } }),
@@ -388,8 +396,7 @@ describe("ModelSelector assignment menu role bindings", () => {
 			[],
 			{
 				refresh: async () => {
-					refreshCalls++;
-					if (refreshCalls > 1) throw new Error("offline refresh failed");
+					throw new Error("offline refresh failed");
 				},
 				getDiscoverableProviders: () => [model.provider],
 				refreshProvider: async () => {

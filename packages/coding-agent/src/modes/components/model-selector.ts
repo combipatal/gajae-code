@@ -572,8 +572,10 @@ export class ModelSelectorComponent extends Container {
 				void this.#refreshProviderAuth();
 			}) ?? (() => {});
 
-		// Load models and do initial render
-		this.#loadModels().then(() => {
+		// The session registry is populated during startup. Reusing that catalog
+		// keeps opening the selector responsive instead of synchronously reloading
+		// the signed preset registry on every `/model`.
+		this.#loadModels({ refreshRegistry: false }).then(() => {
 			this.#buildProviderTabs();
 			if (this.#smartRoutingOnly) {
 				this.#enterSmartRoutingMode();

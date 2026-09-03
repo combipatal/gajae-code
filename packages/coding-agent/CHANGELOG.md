@@ -2,6 +2,7 @@
 
 ## [Unreleased]
 
+- Opening `/model` now reuses the catalog loaded during session startup instead of synchronously reloading the signed preset registry, so model selection stays responsive while explicit provider refreshes and catalog-change updates retain their existing reload paths.
 - Ask now rejects standalone custom-input pseudo-option labels such as `Other (type your own)`, `custom input`, and `직접 입력` while preserving genuine labels that merely contain those words; single-option asks no longer publish a recommended marker, including through workflow-gate/SDK question projection.
 - Session-state lock acquisition now retries immediately after positively proving and identity-reclaiming a dead transition owner, so forced exits no longer add a retry delay to the next resume while unproven or live claims retain the bounded backoff path.
 - Coordinator persist failures now include typed lock-cause fields and use a per-document, per-failure-class 30-second warn window; proven-refused local model discovery is debug-level, and `session_closed` delivery failures route by attached-client count.
