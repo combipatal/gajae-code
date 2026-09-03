@@ -31,10 +31,11 @@ export interface EnsureBrokerSettings {
 
 const BROKER_PUBLICATION_TIMEOUT_MS = 10_000;
 const STARTUP_LOCK_WAIT_MS = BROKER_PUBLICATION_TIMEOUT_MS - 1_000;
-/** Parent budget covers a full child-fence wait followed by one normal publication attempt. */
-const DISCOVERY_TIMEOUT_MS = STARTUP_LOCK_WAIT_MS + BROKER_PUBLICATION_TIMEOUT_MS;
+const STALE_BROKER_RETIREMENT_TIMEOUT_MS = 5_000;
+/** Parent budget covers stale retirement, a full child-fence wait, and one publication attempt. */
+const DISCOVERY_TIMEOUT_MS = STALE_BROKER_RETIREMENT_TIMEOUT_MS + STARTUP_LOCK_WAIT_MS + BROKER_PUBLICATION_TIMEOUT_MS;
 /** A process that loses the spawn lock waits this long for the winner's discovery before giving up. */
-const SPAWN_LOCK_WAIT_MS = DISCOVERY_TIMEOUT_MS + 5_000;
+const SPAWN_LOCK_WAIT_MS = STALE_BROKER_RETIREMENT_TIMEOUT_MS + DISCOVERY_TIMEOUT_MS + 5_000;
 const SPAWN_LOCK_RETRY_DELAY_MS = 50;
 const SPAWN_LOCK_TARGET_NAME = "broker.spawn";
 const STARTUP_LOCK_TARGET_NAME = "broker.startup";
@@ -302,16 +303,16 @@ function fixtureLeaseUnavailable(): Error {
 	return new Error("fixture_broker_lease_unavailable");
 }
 
-const STALE_BROKER_SHUTDOWN_TIMEOUT_MS = 5_000;
 const STALE_BROKER_POLL_MS = 50;
 
 async function retireStaleBrokerGeneration(stale: BrokerDiscovery, settings: EnsureBrokerSettings): Promise<void> {
+	const deadline = Date.now() + STALE_BROKER_RETIREMENT_TIMEOUT_MS;
 	let shutdownSucceeded = false;
 	try {
 		const { SdkClient } = await import("../client/client");
 		const current = await readBrokerDiscovery(settings.agentDir, settings.heartbeatTtlMs);
 		if (!current || current.ownerId !== stale.ownerId || current.pid !== stale.pid) return;
-		const client = await SdkClient.connect(current.url, current.token, { timeoutMs: 2_000 });
+		const client = await SdkClient.connect(current.url, current.token, { timeoutMs: 2_000, deadline });
 		try {
 			await client.global("broker.shutdown", {});
 			shutdownSucceeded = true;
@@ -329,7 +330,6 @@ async function retireStaleBrokerGeneration(stale: BrokerDiscovery, settings: Ens
 		} catch {}
 	}
 	// Wait for the stale identity to disappear (owner-fenced: pid+incarnation).
-	const deadline = Date.now() + STALE_BROKER_SHUTDOWN_TIMEOUT_MS;
 	while (Date.now() < deadline) {
 		const current = await readBrokerDiscovery(settings.agentDir, settings.heartbeatTtlMs);
 		if (!current || current.pid !== stale.pid || current.incarnation !== stale.incarnation) break;
